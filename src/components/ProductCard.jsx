@@ -58,7 +58,8 @@ export function ProductCard({ product, onTap, onLongPress }) {
     setPressProgress(0)
 
     // If it wasn't a long press and duration was short, trigger TAP
-    if (!longPressedRef.current && duration < LONG_PRESS_DURATION && duration > 10) {
+    if (!longPressedRef.current && duration < LONG_PRESS_DURATION) {
+      console.log('Tap triggered for:', product.nome)
       onTap(product)
     }
     
