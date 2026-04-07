@@ -11,9 +11,16 @@ export function ProductCard({ product, onTap, onLongPress }) {
   const progressRef = useRef(null)
   const startTimeRef = useRef(null)
   const longPressedRef = useRef(false)
+  const isTouchRef = useRef(false)
 
   const startPress = useCallback((e) => {
-    // Only handle primary button for mouse
+    // Detect if we are on touch
+    if (e.type === 'touchstart') {
+      isTouchRef.current = true
+    }
+    
+    // Ignore mouse events if we're in touch mode (ghost click prevention)
+    if (e.type === 'mousedown' && isTouchRef.current) return
     if (e.type === 'mousedown' && e.button !== 0) return
     
     // Prevent overlapping timers (Crucial for mobile)
@@ -43,8 +50,8 @@ export function ProductCard({ product, onTap, onLongPress }) {
   }, [product, onLongPress])
 
   const endPress = useCallback((e) => {
-    // Prevent Mouse events from firing after Touch (causes double tap on some mobile browsers)
-    if (e.type === 'mouseup' && startTimeRef.current && (Date.now() - startTimeRef.current) > 1000) {
+    // Ignore mouse if we're in touch mode
+    if (e.type === 'mouseup' && isTouchRef.current) {
       return
     }
 
