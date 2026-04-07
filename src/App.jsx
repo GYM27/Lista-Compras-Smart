@@ -3,6 +3,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '../convex/_generated/api'
 import { CatalogTab } from './components/CatalogTab'
 import { ShoppingListTab } from './components/ShoppingListTab'
+import { StatsTab } from './components/StatsTab'
 
 // ────────────────────────────────────────────────────────
 // DEMO SEED DATA — used when Convex is not yet connected
@@ -31,6 +32,12 @@ const DEMO_PRODUCTS = [
   { _id: '20', nome: 'Salsicha', categoria: 'Carnes & Peixe', quantidade_pendente: 0, contador_frequencia: 4 },
 ]
 
+const DEMO_HISTORY = [
+  { _id: 'h1', nome: 'Leite', quantidade: 12, data: Date.now() - 1000 * 60 * 60 * 24 * 5 },
+  { _id: 'h2', nome: 'Pão de Forma', quantidade: 5, data: Date.now() - 1000 * 60 * 60 * 24 * 10 },
+  { _id: 'h3', nome: 'Café', quantidade: 3, data: Date.now() - 1000 * 60 * 60 * 24 * 2 },
+]
+
 // ────────────────────────────────────────────────────────
 // CONVEX WRAPPER — handles the case where Convex is not
 // yet provisioned (shows demo mode instead of crashing)
@@ -38,19 +45,23 @@ const DEMO_PRODUCTS = [
 function AppConvex() {
   const [activeTab, setActiveTab] = useState('catalog')
 
-  // ── Convex reactive query — auto-updates on ALL devices ──
+  // ── Convex reactive queries ──
   const produtos = useQuery(api.produtos.listar)
+  const historico = useQuery(api.produtos.listarHistorico)
 
   // ── Convex mutations ──────────────────────────────────────
   const tocar          = useMutation(api.mutations.tocar)
   const definirQtd     = useMutation(api.mutations.definirQuantidade)
-  const marcarComprado = useMutation(api.mutations.marcarComprado)
+  const marcarNoCesto  = useMutation(api.mutations.marcarNoCesto)
+  const limparCesto    = useMutation(api.mutations.limparCesto)
   const limparTudo     = useMutation(api.mutations.limparTudo)
+  const limparHistorico = useMutation(api.mutations.limparHistorico)
   const adicionar      = useMutation(api.mutations.adicionar)
 
-  // loading state (Convex returns undefined while fetching)
-  const loading = produtos === undefined
+  // loading state
+  const loading = produtos === undefined || historico === undefined
   const products = produtos ?? []
+  const history = historico ?? []
   const pendingCount = products.filter((p) => p.quantidade_pendente > 0).length
 
   // ── Handlers ──────────────────────────────────────────────
@@ -64,12 +75,20 @@ function AppConvex() {
   }, [definirQtd])
 
   const handleCheck = useCallback(async (product) => {
-    await marcarComprado({ id: product._id })
-  }, [marcarComprado])
+    await marcarNoCesto({ id: product._id })
+  }, [marcarNoCesto])
 
-  const handleClearAll = useCallback(async () => {
+  const handleFinishShopping = useCallback(async () => {
+    await limparCesto({})
+  }, [limparCesto])
+
+  const handleHardReset = useCallback(async () => {
     await limparTudo({})
   }, [limparTudo])
+
+  const handleClearHistory = useCallback(async () => {
+    await limparHistorico({})
+  }, [limparHistorico])
 
   const handleAddProduct = useCallback(async (data) => {
     await adicionar({
@@ -84,12 +103,15 @@ function AppConvex() {
       activeTab={activeTab}
       setActiveTab={setActiveTab}
       products={products}
+      history={history}
       loading={loading}
       pendingCount={pendingCount}
       onTap={handleTap}
       onLongPress={handleLongPress}
       onCheck={handleCheck}
-      onClearAll={handleClearAll}
+      onFinish={handleFinishShopping}
+      onClearAll={handleHardReset}
+      onClearHistory={handleClearHistory}
       onAddProduct={handleAddProduct}
       usingDemo={false}
     />
@@ -102,6 +124,7 @@ function AppConvex() {
 function AppDemo() {
   const [activeTab, setActiveTab] = useState('catalog')
   const [products, setProducts] = useState(DEMO_PRODUCTS)
+  const [history, setHistory] = useState(DEMO_HISTORY)
 
   const pendingCount = products.filter((p) => p.quantidade_pendente > 0).length
 
@@ -109,11 +132,16 @@ function AppDemo() {
     setProducts((prev) =>
       prev.map((p) => {
         if (p._id !== product._id) return p
-        const isFirst = p.quantidade_pendente === 0
-        return {
-          ...p,
-          quantidade_pendente: p.quantidade_pendente + 1,
-          contador_frequencia: isFirst ? p.contador_frequencia + 1 : p.contador_frequencia,
+        const isInList = p.quantidade_pendente > 0
+        if (isInList) {
+          return { ...p, quantidade_pendente: 0, no_carrinho: false }
+        } else {
+          return {
+            ...p,
+            quantidade_pendente: 1,
+            no_carrinho: false,
+            contador_frequencia: p.contador_frequencia + 1,
+          }
         }
       })
     )
@@ -127,6 +155,7 @@ function AppDemo() {
         return {
           ...p,
           quantidade_pendente: qty,
+          no_carrinho: false,
           contador_frequencia: addFreq ? p.contador_frequencia + 1 : p.contador_frequencia,
         }
       })
@@ -135,12 +164,25 @@ function AppDemo() {
 
   const handleCheck = useCallback((product) => {
     setProducts((prev) =>
-      prev.map((p) => p._id === product._id ? { ...p, quantidade_pendente: 0 } : p)
+      prev.map((p) => p._id === product._id ? { ...p, no_carrinho: !p.no_carrinho } : p)
     )
   }, [])
 
+  const handleFinishShopping = useCallback(() => {
+    const panier = products.filter(p => p.no_carrinho)
+    const newHistory = panier.map(p => ({ _id: `h-${Date.now()}-${p._id}`, nome: p.nome, quantidade: p.quantidade_pendente, data: Date.now() }))
+    setHistory(prev => [...newHistory, ...prev])
+    setProducts((prev) => 
+      prev.map((p) => p.no_carrinho ? { ...p, quantidade_pendente: 0, no_carrinho: false } : p)
+    )
+  }, [products])
+
   const handleClearAll = useCallback(() => {
-    setProducts((prev) => prev.map((p) => ({ ...p, quantidade_pendente: 0 })))
+    setProducts((prev) => prev.map((p) => ({ ...p, quantidade_pendente: 0, no_carrinho: false })))
+  }, [])
+
+  const handleClearHistory = useCallback(() => {
+    setHistory([])
   }, [])
 
   const handleAddProduct = useCallback((data) => {
@@ -151,6 +193,7 @@ function AppDemo() {
         categoria: data.categoria,
         imagem_url: data.imagem_url || null,
         quantidade_pendente: 0,
+        no_carrinho: false,
         contador_frequencia: 0,
       }].sort((a, b) => a.nome.localeCompare(b.nome))
     )
@@ -161,12 +204,15 @@ function AppDemo() {
       activeTab={activeTab}
       setActiveTab={setActiveTab}
       products={products}
+      history={history}
       loading={false}
       pendingCount={pendingCount}
       onTap={handleTap}
       onLongPress={handleLongPress}
       onCheck={handleCheck}
+      onFinish={handleFinishShopping}
       onClearAll={handleClearAll}
+      onClearHistory={handleClearHistory}
       onAddProduct={handleAddProduct}
       usingDemo={true}
     />
@@ -178,13 +224,17 @@ function AppDemo() {
 // ────────────────────────────────────────────────────────
 function AppShell({
   activeTab, setActiveTab,
-  products, loading, pendingCount,
-  onTap, onLongPress, onCheck, onClearAll, onAddProduct,
+  products, history, loading, pendingCount,
+  onTap, onLongPress, onCheck, onFinish, onClearAll, onClearHistory, onAddProduct,
   usingDemo,
 }) {
   return (
     <div
-      style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#020617', fontFamily: "'Inter', system-ui, sans-serif" }}
+      style={{
+        display: 'flex', flexDirection: 'column', height: '100dvh',
+        background: '#020617', padding: '2px', // Global safety margin
+        fontFamily: "'Inter', system-ui, sans-serif"
+      }}
     >
       {/* ── Top Header ─────────────────────────────────── */}
       <header
@@ -216,17 +266,17 @@ function AppShell({
         </div>
       </header>
 
-      {/* ── Tab Bar ────────────────────────────────────── */}
-      <nav style={{ flexShrink: 0, display: 'flex', padding: '10px 16px 8px', gap: 8, background: '#020617' }}>
+      {/* ── Triple Tab Bar ────────────────────────────────────── */}
+      <nav style={{ flexShrink: 0, display: 'flex', padding: '10px 16px 8px', gap: 6, background: '#020617' }}>
         <button
           onClick={() => setActiveTab('catalog')}
           style={{
-            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            padding: '10px 0', borderRadius: 18, fontWeight: 700, fontSize: '0.875rem',
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            padding: '12px 0', borderRadius: 18, fontWeight: 700, fontSize: '0.8rem',
             cursor: 'pointer', border: 'none', transition: 'all 0.2s ease',
             ...(activeTab === 'catalog'
               ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: 'white', boxShadow: '0 4px 20px rgba(16,185,129,0.4)' }
-              : { background: 'rgba(30,41,59,0.6)', color: '#64748b', border: '1px solid rgba(71,85,105,0.25)' }
+              : { background: 'rgba(30,41,59,0.4)', color: '#64748b', border: '1px solid rgba(71,85,105,0.2)' }
             ),
           }}
         >
@@ -234,14 +284,29 @@ function AppShell({
         </button>
 
         <button
+          onClick={() => setActiveTab('stats')}
+          style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            padding: '12px 0', borderRadius: 18, fontWeight: 700, fontSize: '0.8rem',
+            cursor: 'pointer', border: 'none', transition: 'all 0.2s ease',
+            ...(activeTab === 'stats'
+              ? { background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', color: 'white', boxShadow: '0 4px 20px rgba(139,92,246,0.4)' }
+              : { background: 'rgba(30,41,59,0.4)', color: '#64748b', border: '1px solid rgba(71,85,105,0.2)' }
+            ),
+          }}
+        >
+          📊 Stats
+        </button>
+
+        <button
           onClick={() => setActiveTab('shopping')}
           style={{
-            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            padding: '10px 0', borderRadius: 18, fontWeight: 700, fontSize: '0.875rem',
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            padding: '12px 0', borderRadius: 18, fontWeight: 700, fontSize: '0.8rem',
             cursor: 'pointer', border: 'none', transition: 'all 0.2s ease', position: 'relative',
             ...(activeTab === 'shopping'
               ? { background: 'linear-gradient(135deg, #f43f5e, #be123c)', color: 'white', boxShadow: '0 4px 20px rgba(244,63,94,0.4)' }
-              : { background: 'rgba(30,41,59,0.6)', color: '#64748b', border: '1px solid rgba(71,85,105,0.25)' }
+              : { background: 'rgba(30,41,59,0.4)', color: '#64748b', border: '1px solid rgba(71,85,105,0.2)' }
             ),
           }}
         >
@@ -249,10 +314,10 @@ function AppShell({
           {pendingCount > 0 && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              minWidth: 22, height: 22, padding: '0 5px', borderRadius: 999,
-              fontSize: '0.7rem', fontWeight: 900,
+              minWidth: 18, height: 18, borderRadius: 999,
+              fontSize: '0.65rem', fontWeight: 900,
               background: activeTab === 'shopping' ? 'rgba(255,255,255,0.3)' : '#f43f5e',
-              color: 'white',
+              color: 'white', marginLeft: 4
             }}>
               {pendingCount}
             </span>
@@ -275,7 +340,15 @@ function AppShell({
           <ShoppingListTab
             products={products}
             onCheck={onCheck}
+            onFinish={onFinish}
             onClearAll={onClearAll}
+          />
+        </div>
+        <div style={{ display: activeTab === 'stats' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+          <StatsTab
+            history={history}
+            onClearHistory={onClearHistory}
+            loading={loading}
           />
         </div>
       </main>

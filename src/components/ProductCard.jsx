@@ -6,23 +6,31 @@ export function ProductCard({ product, onTap, onLongPress }) {
   const isMissing = product.quantidade_pendente > 0
   const [pressing, setPressing] = useState(false)
   const [pressProgress, setPressProgress] = useState(0)
+  
   const timerRef = useRef(null)
   const progressRef = useRef(null)
   const startTimeRef = useRef(null)
+  const longPressedRef = useRef(false)
 
   const startPress = useCallback((e) => {
-    e.preventDefault()
+    // Only handle primary touches
+    if (e.type === 'mousedown' && e.button !== 0) return
+    
     setPressing(true)
+    longPressedRef.current = false
     startTimeRef.current = Date.now()
     setPressProgress(0)
 
+    // Progress animation for long press
     progressRef.current = setInterval(() => {
       const elapsed = Date.now() - startTimeRef.current
       const progress = Math.min(elapsed / LONG_PRESS_DURATION, 1)
       setPressProgress(progress)
-    }, 30)
+    }, 16) // ~60fps
 
+    // Trigger long press
     timerRef.current = setTimeout(() => {
+      longPressedRef.current = true
       clearInterval(progressRef.current)
       setPressing(false)
       setPressProgress(0)
@@ -30,20 +38,31 @@ export function ProductCard({ product, onTap, onLongPress }) {
     }, LONG_PRESS_DURATION)
   }, [product, onLongPress])
 
-  const cancelPress = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      clearInterval(progressRef.current)
-      timerRef.current = null
-    }
+  const endPress = useCallback((e) => {
+    const duration = Date.now() - startTimeRef.current
+    
+    // Clear all timers
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (progressRef.current) clearInterval(progressRef.current)
+    
     setPressing(false)
     setPressProgress(0)
-  }, [])
 
-  const handleClick = useCallback((e) => {
-    if (pressing) return
-    onTap(product)
-  }, [pressing, product, onTap])
+    // If it wasn't a long press and duration was short, trigger TAP
+    if (!longPressedRef.current && duration < LONG_PRESS_DURATION) {
+      onTap(product)
+    }
+    
+    timerRef.current = null
+  }, [product, onTap])
+
+  const cancelPress = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (progressRef.current) clearInterval(progressRef.current)
+    setPressing(false)
+    setPressProgress(0)
+    timerRef.current = null
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -84,12 +103,12 @@ export function ProductCard({ product, onTap, onLongPress }) {
   return (
     <div
       className={`relative rounded-[24px] cursor-pointer select-none overflow-hidden ${isMissing ? 'card-missing' : 'card-have'}`}
-      style={{ minHeight: 140, userSelect: 'none', touchAction: 'none' }}
+      style={{ minHeight: 140, userSelect: 'none', touchAction: 'manipulation' }}
       onMouseDown={startPress}
-      onMouseUp={(e) => { cancelPress(); handleClick(e) }}
+      onMouseUp={endPress}
       onMouseLeave={cancelPress}
       onTouchStart={startPress}
-      onTouchEnd={(e) => { cancelPress(); handleClick(e) }}
+      onTouchEnd={endPress}
       onTouchCancel={cancelPress}
     >
       {/* Long press progress ring */}

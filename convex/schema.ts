@@ -8,9 +8,19 @@ export default defineSchema({
     imagem_url: v.optional(v.string()),
     quantidade_pendente: v.number(),
     contador_frequencia: v.number(),
+    no_carrinho: v.optional(v.boolean()), // True if added to basket in current session
     data_ultima_compra: v.optional(v.number()), // Unix timestamp ms
   })
     .index("by_nome", ["nome"])
     .index("by_categoria", ["categoria"])
     .index("by_frequencia", ["contador_frequencia"]),
+
+  historico: defineTable({
+    produto_id: v.id("produtos"),
+    nome: v.string(),
+    quantidade: v.number(),
+    data: v.number(), // Unix timestamp (ms)
+  })
+    .index("by_data", ["data"])
+    .index("by_produto", ["produto_id", "data"]),
 });

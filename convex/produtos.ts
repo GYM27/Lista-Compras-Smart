@@ -13,3 +13,16 @@ export const listar = query({
       .collect();
   },
 });
+
+/**
+ * Get the full purchase history.
+ */
+export const listarHistorico = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("historico")
+      .order("desc") // Most recent first
+      .collect();
+  },
+});
