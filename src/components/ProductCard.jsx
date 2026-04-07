@@ -13,9 +13,13 @@ export function ProductCard({ product, onTap, onLongPress }) {
   const longPressedRef = useRef(false)
 
   const startPress = useCallback((e) => {
-    // Only handle primary touches
+    // Only handle primary button for mouse
     if (e.type === 'mousedown' && e.button !== 0) return
     
+    // Prevent overlapping timers (Crucial for mobile)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (progressRef.current) clearInterval(progressRef.current)
+
     setPressing(true)
     longPressedRef.current = false
     startTimeRef.current = Date.now()
@@ -39,7 +43,12 @@ export function ProductCard({ product, onTap, onLongPress }) {
   }, [product, onLongPress])
 
   const endPress = useCallback((e) => {
-    const duration = Date.now() - startTimeRef.current
+    // Prevent Mouse events from firing after Touch (causes double tap on some mobile browsers)
+    if (e.type === 'mouseup' && startTimeRef.current && (Date.now() - startTimeRef.current) > 1000) {
+      return
+    }
+
+    const duration = Date.now() - (startTimeRef.current || Date.now())
     
     // Clear all timers
     if (timerRef.current) clearTimeout(timerRef.current)
@@ -49,11 +58,12 @@ export function ProductCard({ product, onTap, onLongPress }) {
     setPressProgress(0)
 
     // If it wasn't a long press and duration was short, trigger TAP
-    if (!longPressedRef.current && duration < LONG_PRESS_DURATION) {
+    if (!longPressedRef.current && duration < LONG_PRESS_DURATION && duration > 10) {
       onTap(product)
     }
     
     timerRef.current = null
+    startTimeRef.current = null
   }, [product, onTap])
 
   const cancelPress = useCallback(() => {
@@ -62,6 +72,7 @@ export function ProductCard({ product, onTap, onLongPress }) {
     setPressing(false)
     setPressProgress(0)
     timerRef.current = null
+    startTimeRef.current = null
   }, [])
 
   useEffect(() => {
